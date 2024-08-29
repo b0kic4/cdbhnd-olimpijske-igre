@@ -102,11 +102,55 @@ class Group {
   }
 
   playGroupPhase() {
+    const rounds = [];
+
     for (let i = 0; i < this.teams.length; i++) {
       for (let j = i + 1; j < this.teams.length; j++) {
-        const match = playMatch(this.teams[i], this.teams[j]);
+        rounds.push({ team1: this.teams[i], team2: this.teams[j] });
+      }
+    }
+
+    const numRounds = this.teams.length - 1;
+    const groupRounds = Array(numRounds)
+      .fill(null)
+      .map(() => []);
+
+    for (let round = 0; round < numRounds; round++) {
+      for (
+        let matchIndex = 0;
+        matchIndex < this.teams.length / 2;
+        matchIndex++
+      ) {
+        const match = playMatch(
+          rounds[round * (this.teams.length / 2) + matchIndex].team1,
+          rounds[round * (this.teams.length / 2) + matchIndex].team2,
+        );
         this.matches.push(match);
         this.updateTeamStats(match);
+
+        groupRounds[round].push(match);
+      }
+    }
+
+    return groupRounds;
+  }
+
+  printGroupedMatches(groupedMatches) {
+    for (const round in groupedMatches) {
+      console.log(`\nGrupna faza - ${round}:`);
+      const matchesByGroup = groupedMatches[round].reduce((acc, match) => {
+        if (!acc[match.groupName]) {
+          acc[match.groupName] = [];
+        }
+        acc[match.groupName].push(match.matchResult);
+        return acc;
+      }, {});
+
+      for (const group in matchesByGroup) {
+        console.log(`    Grupa ${group}:`);
+        matchesByGroup[group].forEach((matchResult) => {
+          console.log(`        ${matchResult}`);
+        });
       }
     }
   }
@@ -230,8 +274,37 @@ class Olimpijada {
   }
 
   startGroupStage() {
+    // cuva meceva po kolima
+    const rounds = {};
+
     this.groups.forEach((group) => {
-      group.playGroupPhase();
+      const groupRounds = group.playGroupPhase();
+      groupRounds.forEach((matches, roundIndex) => {
+        const roundKey = `Kolo ${roundIndex + 1}`;
+        if (!rounds[roundKey]) {
+          rounds[roundKey] = [];
+        }
+        rounds[roundKey].push({
+          groupName: group.name,
+          matches,
+        });
+      });
+    });
+
+    this.printRounds(rounds);
+  }
+
+  printRounds(rounds) {
+    Object.keys(rounds).forEach((round) => {
+      console.log(`\nGrupna faza - ${round}:`);
+      rounds[round].forEach(({ groupName, matches }) => {
+        console.log(`    Grupa ${groupName}:`);
+        matches.forEach((match) => {
+          console.log(
+            `        ${match.team1.name} - ${match.team2.name} (${match.team1Score}:${match.team2Score})`,
+          );
+        });
+      });
     });
   }
 
