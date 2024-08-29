@@ -102,57 +102,43 @@ class Group {
   }
 
   playGroupPhase() {
-    const rounds = [];
+    const groupRounds = [];
 
-    for (let i = 0; i < this.teams.length; i++) {
-      for (let j = i + 1; j < this.teams.length; j++) {
-        rounds.push({ team1: this.teams[i], team2: this.teams[j] });
-      }
+    const numTeams = this.teams.length;
+    const isOdd = numTeams % 2 !== 0;
+    const numRounds = isOdd ? numTeams : numTeams - 1; // broj kola je broj timova ako je neparan, ili broj timova minus 1 ako je paran
+    const halfSize = Math.floor(numTeams / 2);
+
+    const teams = this.teams.slice();
+
+    // dodajemo null mesto ako je broj timova neparan
+    if (isOdd) {
+      teams.push(null);
     }
 
-    const numRounds = this.teams.length - 1;
-    const groupRounds = Array(numRounds)
-      .fill(null)
-      .map(() => []);
-
     for (let round = 0; round < numRounds; round++) {
-      for (
-        let matchIndex = 0;
-        matchIndex < this.teams.length / 2;
-        matchIndex++
-      ) {
-        const match = playMatch(
-          rounds[round * (this.teams.length / 2) + matchIndex].team1,
-          rounds[round * (this.teams.length / 2) + matchIndex].team2,
-        );
-        this.matches.push(match);
-        this.updateTeamStats(match);
+      const roundMatches = [];
 
-        groupRounds[round].push(match);
+      for (let i = 0; i < halfSize; i++) {
+        const home = teams[i];
+        const away = teams[teams.length - 1 - i];
+
+        if (home && away) {
+          const match = playMatch(home, away);
+          this.matches.push(match);
+          this.updateTeamStats(match);
+          roundMatches.push(match);
+        }
       }
+
+      // rotacija timova
+      const lastTeam = teams.pop();
+      teams.splice(1, 0, lastTeam);
+
+      groupRounds.push(roundMatches);
     }
 
     return groupRounds;
-  }
-
-  printGroupedMatches(groupedMatches) {
-    for (const round in groupedMatches) {
-      console.log(`\nGrupna faza - ${round}:`);
-      const matchesByGroup = groupedMatches[round].reduce((acc, match) => {
-        if (!acc[match.groupName]) {
-          acc[match.groupName] = [];
-        }
-        acc[match.groupName].push(match.matchResult);
-        return acc;
-      }, {});
-
-      for (const group in matchesByGroup) {
-        console.log(`    Grupa ${group}:`);
-        matchesByGroup[group].forEach((matchResult) => {
-          console.log(`        ${matchResult}`);
-        });
-      }
-    }
   }
 
   updateTeamStats(match) {
@@ -274,7 +260,7 @@ class Olimpijada {
   }
 
   startGroupStage() {
-    // cuva meceva po kolima
+    // cuva meceve po kolima
     const rounds = {};
 
     this.groups.forEach((group) => {
@@ -310,13 +296,6 @@ class Olimpijada {
 
   showGroupResults() {
     this.groups.forEach((group) => {
-      console.log(`\nRezultati Grupne Faze: ${group.name}:`);
-      group.matches.forEach((match) => {
-        console.log(
-          `${match.team1.name} - ${match.team2.name} (${match.team1Score}:${match.team2Score})`,
-        );
-      });
-
       console.log(`\nKonacan rezultat za grupu: ${group.name}:`);
       group.rankTeams().forEach((team, index) => {
         console.log(
@@ -385,11 +364,6 @@ class Olimpijada {
 
     this.semifinals = this.playQuarterfinals();
 
-    console.log("\nPolufinale:");
-    this.semifinals.forEach((pair) => {
-      console.log(`    ${pair.team1.name} - ${pair.team2.name}`);
-    });
-
     const { finalists, bronzeMatch } = this.playSemifinals();
 
     const bronzeMatchResult = playMatch(bronzeMatch[0], bronzeMatch[1]);
@@ -398,17 +372,17 @@ class Olimpijada {
         ? bronzeMatch[0]
         : bronzeMatch[1];
 
-    console.log("\nBronzana medalja match:");
+    console.log("\nUtakmica za treće mesto:");
     console.log(
-      `    ${bronzeMatch[0].name} vs ${bronzeMatch[1].name} -> ${bronzeMatchResult.team1Score}:${bronzeMatchResult.team2Score}`,
+      `    ${bronzeMatch[0].name} - ${bronzeMatch[1].name} (${bronzeMatchResult.team1Score}: ${bronzeMatchResult.team2Score})`,
     );
 
     const { gold, silver } = this.playFinals(finalists);
 
     console.log("\nMedalje:");
-    console.log(`    1. Zlato: ${gold.name}`);
-    console.log(`    2. Srebro: ${silver.name}`);
-    console.log(`    3. Bronza: ${bronzeWinner.name}`);
+    console.log(`    1. ${gold.name} -> Zlato`);
+    console.log(`    2. ${silver.name} -> Srebro`);
+    console.log(`    3. ${bronzeWinner.name} -> Bronza`);
   }
 
   createQuarterfinals(potD, potE, potF, potG) {
@@ -486,12 +460,16 @@ class Olimpijada {
       EvsF: [],
     };
 
-    console.log("\n");
-    this.quarterfinals.forEach((match) => {
+    console.log("\nČetvrtfinale:");
+    this.quarterfinals.forEach((match, index) => {
       const matchResult = playMatch(match.team1, match.team2);
       console.log(
-        `Cetvrtfinale: ${match.team1.name} vs ${match.team2.name} -> ${matchResult.team1Score}:${matchResult.team2Score}`,
+        `    ${match.team1.name} - ${match.team2.name} (${matchResult.team1Score}: ${matchResult.team2Score})`,
       );
+
+      if (index === 1) {
+        console.log("\n");
+      }
 
       const winner =
         matchResult.team1Score > matchResult.team2Score
@@ -528,11 +506,11 @@ class Olimpijada {
     const finalists = [];
     const bronzeMatch = [];
 
-    console.log("\n");
+    console.log("\nPolufinale:");
     this.semifinals.forEach((match) => {
       const matchResult = playMatch(match.team1, match.team2);
       console.log(
-        `Polufinale: ${match.team1.name} protiv ${match.team2.name} -> ${matchResult.team1Score}:${matchResult.team2Score}`,
+        `    ${match.team1.name} - ${match.team2.name} (${matchResult.team1Score}: ${matchResult.team2Score})`,
       );
 
       const winner =
@@ -562,8 +540,9 @@ class Olimpijada {
         ? finalists[1]
         : finalists[0];
 
+    console.log("\nFinale:");
     console.log(
-      `\nFinale: \n${finalists[0].name} protiv ${finalists[1].name} -> ${finalMatch.team1Score}:${finalMatch.team2Score}`,
+      `    ${finalists[0].name} - ${finalists[1].name} (${finalMatch.team1Score}: ${finalMatch.team2Score})`,
     );
 
     return { gold, silver };
