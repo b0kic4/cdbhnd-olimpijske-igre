@@ -11,8 +11,8 @@ function playMatch(team1, team2) {
   const team1WinChance =
     0.5 + rankDiff * 0.3 + formFactorDiff * 0.4 + randomFactor;
 
-  const team1Score = Math.floor(Math.random() * (100 - 70) + 70);
-  const team2Score = Math.floor(Math.random() * (100 - 70) + 70);
+  const team1Score = Math.floor(Math.random() * (100 - 60) + 55);
+  const team2Score = Math.floor(Math.random() * (100 - 60) + 55);
 
   if (team1WinChance < 0.01 || team1WinChance > 0.99) {
     // dodatni random faktor za odustajanje, kako bi bila sto manja verovatnoca za predaju
@@ -286,9 +286,15 @@ class Olimpijada {
       rounds[round].forEach(({ groupName, matches }) => {
         console.log(`    Grupa ${groupName}:`);
         matches.forEach((match) => {
-          console.log(
-            `        ${match.team1.name} - ${match.team2.name} (${match.team1Score}:${match.team2Score})`,
-          );
+          if (match.result === "resigned") {
+            console.log(
+              `        ${match.team1.name} - ${match.team2.name} (${match.team1Score}:${match.team2Score}) - (Predaja: ${match.resignedTeam}).`,
+            );
+          } else {
+            console.log(
+              `        ${match.team1.name} - ${match.team2.name} (${match.team1Score}:${match.team2Score})`,
+            );
+          }
         });
       });
     });
@@ -299,7 +305,7 @@ class Olimpijada {
       console.log(`\nKonacan rezultat za grupu: ${group.name}:`);
       group.rankTeams().forEach((team, index) => {
         console.log(
-          `${index + 1}. ${team.name} - Pobede: ${team.wins}, Porazi: ${team.losses}, Points: ${team.points}, Scored: ${team.scoredPoints}, Conceded: ${team.concededPoints}, diff: ${team.getScorePointDiff()}`,
+          `${index + 1}. ${team.name} - Pobede: ${team.wins}, Porazi: ${team.losses}, Postignuti poeni: ${team.points}, Postignuti koševi: ${team.scoredPoints}, Primljeni koševi: ${team.concededPoints}, koševi razlike: ${team.getScorePointDiff()}`,
         );
       });
     });
@@ -367,16 +373,29 @@ class Olimpijada {
     const { finalists, bronzeMatch } = this.playSemifinals();
 
     const bronzeMatchResult = playMatch(bronzeMatch[0], bronzeMatch[1]);
-    const bronzeWinner =
-      bronzeMatchResult.team1Score > bronzeMatchResult.team2Score
-        ? bronzeMatch[0]
-        : bronzeMatch[1];
 
-    console.log("\nUtakmica za treće mesto:");
-    console.log(
-      `    ${bronzeMatch[0].name} - ${bronzeMatch[1].name} (${bronzeMatchResult.team1Score}: ${bronzeMatchResult.team2Score})`,
-    );
+    let bronzeWinner;
+    if (bronzeMatchResult.result === "resigned") {
+      bronzeWinner =
+        bronzeMatchResult.resignedTeam === bronzeMatch[0].name
+          ? bronzeMatch[1]
+          : bronzeMatch[0];
 
+      console.log("\nUtakmica za treće mesto:");
+      console.log(
+        `    ${bronzeMatch[0].name} - ${bronzeMatch[1].name} (Predaja: ${bronzeMatchResult.resignedTeam})`,
+      );
+    } else {
+      bronzeWinner =
+        bronzeMatchResult.team1Score > bronzeMatchResult.team2Score
+          ? bronzeMatch[0]
+          : bronzeMatch[1];
+
+      console.log("\nUtakmica za treće mesto:");
+      console.log(
+        `    ${bronzeMatch[0].name} - ${bronzeMatch[1].name} (${bronzeMatchResult.team1Score}: ${bronzeMatchResult.team2Score})`,
+      );
+    }
     const { gold, silver } = this.playFinals(finalists);
 
     console.log("\nMedalje:");
@@ -463,20 +482,34 @@ class Olimpijada {
     console.log("\nČetvrtfinale:");
     this.quarterfinals.forEach((match, index) => {
       const matchResult = playMatch(match.team1, match.team2);
-      console.log(
-        `    ${match.team1.name} - ${match.team2.name} (${matchResult.team1Score}: ${matchResult.team2Score})`,
-      );
+
+      if (matchResult.result === "resigned") {
+        const winner =
+          matchResult.resignedTeam === match.team1.name
+            ? match.team2
+            : match.team1;
+
+        console.log(
+          `    ${match.team1.name} - ${match.team2.name} (Predaja: ${matchResult.resignedTeam})`,
+        );
+
+        results[match.origin].push(winner);
+      } else {
+        console.log(
+          `    ${match.team1.name} - ${match.team2.name} (${matchResult.team1Score}: ${matchResult.team2Score})`,
+        );
+
+        const winner =
+          matchResult.team1Score > matchResult.team2Score
+            ? match.team1
+            : match.team2;
+
+        results[match.origin].push(winner);
+      }
 
       if (index === 1) {
         console.log("\n");
       }
-
-      const winner =
-        matchResult.team1Score > matchResult.team2Score
-          ? match.team1
-          : match.team2;
-
-      results[match.origin].push(winner);
     });
 
     return this.createSemifinals(results.DvsG, results.EvsF);
@@ -509,21 +542,40 @@ class Olimpijada {
     console.log("\nPolufinale:");
     this.semifinals.forEach((match) => {
       const matchResult = playMatch(match.team1, match.team2);
-      console.log(
-        `    ${match.team1.name} - ${match.team2.name} (${matchResult.team1Score}: ${matchResult.team2Score})`,
-      );
 
-      const winner =
-        matchResult.team1Score > matchResult.team2Score
-          ? match.team1
-          : match.team2;
-      const loser =
-        matchResult.team1Score > matchResult.team2Score
-          ? match.team2
-          : match.team1;
+      if (matchResult.result === "resigned") {
+        const winner =
+          matchResult.resignedTeam === match.team1.name
+            ? match.team2
+            : match.team1;
+        const loser =
+          matchResult.resignedTeam === match.team1.name
+            ? match.team1
+            : match.team2;
 
-      finalists.push(winner);
-      bronzeMatch.push(loser);
+        console.log(
+          `    ${match.team1.name} - ${match.team2.name} (Predaja: ${matchResult.resignedTeam})`,
+        );
+
+        finalists.push(winner);
+        bronzeMatch.push(loser);
+      } else {
+        console.log(
+          `    ${match.team1.name} - ${match.team2.name} (${matchResult.team1Score}: ${matchResult.team2Score})`,
+        );
+
+        const winner =
+          matchResult.team1Score > matchResult.team2Score
+            ? match.team1
+            : match.team2;
+        const loser =
+          matchResult.team1Score > matchResult.team2Score
+            ? match.team2
+            : match.team1;
+
+        finalists.push(winner);
+        bronzeMatch.push(loser);
+      }
     });
 
     return { finalists, bronzeMatch };
@@ -531,21 +583,39 @@ class Olimpijada {
 
   playFinals(finalists) {
     const finalMatch = playMatch(finalists[0], finalists[1]);
-    const gold =
-      finalMatch.team1Score > finalMatch.team2Score
-        ? finalists[0]
-        : finalists[1];
-    const silver =
-      finalMatch.team1Score > finalMatch.team2Score
-        ? finalists[1]
-        : finalists[0];
 
-    console.log("\nFinale:");
-    console.log(
-      `    ${finalists[0].name} - ${finalists[1].name} (${finalMatch.team1Score}: ${finalMatch.team2Score})`,
-    );
+    if (finalMatch.result === "resigned") {
+      const gold =
+        finalMatch.resignedTeam === finalists[0].name
+          ? finalists[1]
+          : finalists[0];
+      const silver =
+        finalMatch.resignedTeam === finalists[0].name
+          ? finalists[0]
+          : finalists[1];
 
-    return { gold, silver };
+      console.log(
+        `    ${finalists[0].name} - ${finalists[1].name} (Predaja: ${finalMatch.resignedTeam})`,
+      );
+
+      return { gold, silver };
+    } else {
+      const gold =
+        finalMatch.team1Score > finalMatch.team2Score
+          ? finalists[0]
+          : finalists[1];
+      const silver =
+        finalMatch.team1Score > finalMatch.team2Score
+          ? finalists[1]
+          : finalists[0];
+
+      console.log("\nFinale:");
+      console.log(
+        `    ${finalists[0].name} - ${finalists[1].name} (${finalMatch.team1Score}: ${finalMatch.team2Score})`,
+      );
+
+      return { gold, silver };
+    }
   }
 }
 
