@@ -1,7 +1,10 @@
-const fs = require("fs");
+const fs = require("fs").promises;
 
-const groups = JSON.parse(fs.readFileSync("./assets/groups.json"));
-const exibitions = JSON.parse(fs.readFileSync("./assets/exibitions.json"));
+async function loadFiles() {
+  const groups = JSON.parse(await fs.readFile("./assets/groups.json"));
+  const exibitions = JSON.parse(await fs.readFile("./assets/exibitions.json"));
+  return { groups, exibitions };
+}
 
 function playMatch(team1, team2) {
   const rankDiff = (team2.fibaRank - team1.fibaRank) / 100;
@@ -57,8 +60,15 @@ function playMatch(team1, team2) {
   }
 }
 
+function playMatchAsync(team1, team2) {
+  return new Promise((resolve) => {
+    const result = playMatch(team1, team2);
+    resolve(result);
+  });
+}
+
 class Team {
-  constructor(name, isoCode, fibaRank) {
+  constructor(name, isoCode, fibaRank, exibitions) {
     this.name = name;
     this.isoCode = isoCode;
     this.fibaRank = fibaRank;
@@ -67,11 +77,12 @@ class Team {
     this.concededPoints = 0;
     this.wins = 0;
     this.losses = 0;
+    this.exibitions = exibitions;
     this.formFactor = this.calcFormFactor();
   }
 
   calcFormFactor() {
-    const matches = exibitions[this.isoCode];
+    const matches = this.exibitions[this.isoCode];
     if (!matches) return 0;
 
     let totalDiff = 0;
@@ -93,15 +104,15 @@ class Team {
 }
 
 class Group {
-  constructor(name, teams) {
+  constructor(name, teams, exibitions) {
     this.name = name;
     this.teams = teams.map(
-      (team) => new Team(team.Team, team.ISOCode, team.FIBARanking),
+      (team) => new Team(team.Team, team.ISOCode, team.FIBARanking, exibitions),
     );
     this.matches = [];
   }
 
-  playGroupPhase() {
+  async playGroupPhase() {
     const groupRounds = [];
 
     const numTeams = this.teams.length;
@@ -109,7 +120,7 @@ class Group {
     const numRounds = isOdd ? numTeams : numTeams - 1; // broj kola je broj timova ako je neparan, ili broj timova minus 1 ako je paran
     const halfSize = Math.floor(numTeams / 2);
 
-    const teams = this.teams.slice();
+    let teams = this.teams.slice();
 
     // dodajemo null mesto ako je broj timova neparan
     if (isOdd) {
@@ -118,22 +129,28 @@ class Group {
 
     for (let round = 0; round < numRounds; round++) {
       const roundMatches = [];
+      const matchPromises = [];
 
       for (let i = 0; i < halfSize; i++) {
         const home = teams[i];
         const away = teams[teams.length - 1 - i];
 
         if (home && away) {
-          const match = playMatch(home, away);
-          this.matches.push(match);
-          this.updateTeamStats(match);
-          roundMatches.push(match);
+          matchPromises.push(
+            playMatchAsync(home, away).then((match) => {
+              this.matches.push(match);
+              this.updateTeamStats(match);
+              roundMatches.push(match);
+            }),
+          );
         }
       }
 
+      await Promise.all(matchPromises);
+
       // rotacija timova
-      const lastTeam = teams.pop();
-      teams.splice(1, 0, lastTeam);
+      const newTeams = [teams[0], ...teams.slice(-1), ...teams.slice(1, -1)];
+      teams = newTeams; // excluded splice -> replaced with index manipulation
 
       groupRounds.push(roundMatches);
     }
@@ -253,29 +270,31 @@ class Group {
 }
 
 class Olimpijada {
-  constructor(groupsData) {
+  constructor(groupsData, exibitions) {
     this.groups = Object.entries(groupsData).map(
-      ([groupName, teams]) => new Group(groupName, teams),
+      ([groupName, teams]) => new Group(groupName, teams, exibitions),
     );
   }
 
-  startGroupStage() {
-    // cuva meceve po kolima
+  async startGroupStage() {
     const rounds = {};
 
-    this.groups.forEach((group) => {
-      const groupRounds = group.playGroupPhase();
-      groupRounds.forEach((matches, roundIndex) => {
-        const roundKey = `Kolo ${roundIndex + 1}`;
-        if (!rounds[roundKey]) {
-          rounds[roundKey] = [];
-        }
-        rounds[roundKey].push({
-          groupName: group.name,
-          matches,
+    // group phase concurrent
+    await Promise.all(
+      this.groups.map(async (group) => {
+        const groupRounds = await group.playGroupPhase();
+        groupRounds.forEach((matches, roundIndex) => {
+          const roundKey = `Kolo ${roundIndex + 1}`;
+          if (!rounds[roundKey]) {
+            rounds[roundKey] = [];
+          }
+          rounds[roundKey].push({
+            groupName: group.name,
+            matches,
+          });
         });
-      });
-    });
+      }),
+    );
 
     this.printRounds(rounds);
   }
@@ -342,7 +361,7 @@ class Olimpijada {
     });
   }
 
-  runTournament() {
+  async runTournament() {
     const finalStandings = this.sortStandings();
 
     // slice => [0, 1) - 0 included, 1 excluded
@@ -368,11 +387,17 @@ class Olimpijada {
       console.log(`    ${pair.team1.name} - ${pair.team2.name}`);
     });
 
-    this.semifinals = this.playQuarterfinals();
+    // async
+    this.semifinals = await this.playQuarterfinals();
 
-    const { finalists, bronzeMatch } = this.playSemifinals();
+    // async
+    const { finalists, bronzeMatch } = await this.playSemifinals();
 
-    const bronzeMatchResult = playMatch(bronzeMatch[0], bronzeMatch[1]);
+    // async
+    const bronzeMatchResult = await playMatchAsync(
+      bronzeMatch[0],
+      bronzeMatch[1],
+    );
 
     let bronzeWinner;
     if (bronzeMatchResult.result === "resigned") {
@@ -396,7 +421,9 @@ class Olimpijada {
         `    ${bronzeMatch[0].name} - ${bronzeMatch[1].name} (${bronzeMatchResult.team1Score}: ${bronzeMatchResult.team2Score})`,
       );
     }
-    const { gold, silver } = this.playFinals(finalists);
+
+    // async
+    const { gold, silver } = await this.playFinals(finalists);
 
     console.log("\nMedalje:");
     console.log(`    1. ${gold.name} -> Zlato`);
@@ -473,50 +500,47 @@ class Olimpijada {
     );
   }
 
-  playQuarterfinals() {
+  async playQuarterfinals() {
     const results = {
       DvsG: [],
       EvsF: [],
     };
 
     console.log("\nČetvrtfinale:");
-    this.quarterfinals.forEach((match, index) => {
-      const matchResult = playMatch(match.team1, match.team2);
+    await Promise.all(
+      this.quarterfinals.map(async (match) => {
+        const matchResult = await playMatchAsync(match.team1, match.team2);
 
-      if (matchResult.result === "resigned") {
-        const winner =
-          matchResult.resignedTeam === match.team1.name
-            ? match.team2
-            : match.team1;
+        if (matchResult.result === "resigned") {
+          const winner =
+            matchResult.resignedTeam === match.team1.name
+              ? match.team2
+              : match.team1;
 
-        console.log(
-          `    ${match.team1.name} - ${match.team2.name} (Predaja: ${matchResult.resignedTeam})`,
-        );
+          console.log(
+            `    ${match.team1.name} - ${match.team2.name} (Predaja: ${matchResult.resignedTeam})`,
+          );
 
-        results[match.origin].push(winner);
-      } else {
-        console.log(
-          `    ${match.team1.name} - ${match.team2.name} (${matchResult.team1Score}: ${matchResult.team2Score})`,
-        );
+          results[match.origin].push(winner);
+        } else {
+          console.log(
+            `    ${match.team1.name} - ${match.team2.name} (${matchResult.team1Score}: ${matchResult.team2Score})`,
+          );
 
-        const winner =
-          matchResult.team1Score > matchResult.team2Score
-            ? match.team1
-            : match.team2;
+          const winner =
+            matchResult.team1Score > matchResult.team2Score
+              ? match.team1
+              : match.team2;
 
-        results[match.origin].push(winner);
-      }
-
-      if (index === 1) {
-        console.log("\n");
-      }
-    });
+          results[match.origin].push(winner);
+        }
+      }),
+    );
 
     return this.createSemifinals(results.DvsG, results.EvsF);
   }
 
   createSemifinals(DvsGWinners, EvsFWinners) {
-    // negativno - ostaje isto, pozitivno - swapuju se
     const shuffledDvsG = DvsGWinners.sort(() => Math.random() - 0.5);
     const shuffledEvsF = EvsFWinners.sort(() => Math.random() - 0.5);
 
@@ -535,54 +559,56 @@ class Olimpijada {
     return semifinals;
   }
 
-  playSemifinals() {
+  async playSemifinals() {
     const finalists = [];
     const bronzeMatch = [];
 
     console.log("\nPolufinale:");
-    this.semifinals.forEach((match) => {
-      const matchResult = playMatch(match.team1, match.team2);
+    await Promise.all(
+      this.semifinals.map(async (match) => {
+        const matchResult = await playMatchAsync(match.team1, match.team2);
 
-      if (matchResult.result === "resigned") {
-        const winner =
-          matchResult.resignedTeam === match.team1.name
-            ? match.team2
-            : match.team1;
-        const loser =
-          matchResult.resignedTeam === match.team1.name
-            ? match.team1
-            : match.team2;
+        if (matchResult.result === "resigned") {
+          const winner =
+            matchResult.resignedTeam === match.team1.name
+              ? match.team2
+              : match.team1;
+          const loser =
+            matchResult.resignedTeam === match.team1.name
+              ? match.team1
+              : match.team2;
 
-        console.log(
-          `    ${match.team1.name} - ${match.team2.name} (Predaja: ${matchResult.resignedTeam})`,
-        );
+          console.log(
+            `    ${match.team1.name} - ${match.team2.name} (Predaja: ${matchResult.resignedTeam})`,
+          );
 
-        finalists.push(winner);
-        bronzeMatch.push(loser);
-      } else {
-        console.log(
-          `    ${match.team1.name} - ${match.team2.name} (${matchResult.team1Score}: ${matchResult.team2Score})`,
-        );
+          finalists.push(winner);
+          bronzeMatch.push(loser);
+        } else {
+          console.log(
+            `    ${match.team1.name} - ${match.team2.name} (${matchResult.team1Score}: ${matchResult.team2Score})`,
+          );
 
-        const winner =
-          matchResult.team1Score > matchResult.team2Score
-            ? match.team1
-            : match.team2;
-        const loser =
-          matchResult.team1Score > matchResult.team2Score
-            ? match.team2
-            : match.team1;
+          const winner =
+            matchResult.team1Score > matchResult.team2Score
+              ? match.team1
+              : match.team2;
+          const loser =
+            matchResult.team1Score > matchResult.team2Score
+              ? match.team2
+              : match.team1;
 
-        finalists.push(winner);
-        bronzeMatch.push(loser);
-      }
-    });
+          finalists.push(winner);
+          bronzeMatch.push(loser);
+        }
+      }),
+    );
 
     return { finalists, bronzeMatch };
   }
 
-  playFinals(finalists) {
-    const finalMatch = playMatch(finalists[0], finalists[1]);
+  async playFinals(finalists) {
+    const finalMatch = await playMatchAsync(finalists[0], finalists[1]);
 
     if (finalMatch.result === "resigned") {
       const gold =
@@ -619,14 +645,16 @@ class Olimpijada {
   }
 }
 
-const main = () => {
-  const olimpijada = new Olimpijada(groups);
+const main = async () => {
+  const { groups, exibitions } = await loadFiles();
+
+  const olimpijada = new Olimpijada(groups, exibitions);
   // grupna faza
-  olimpijada.startGroupStage();
+  await olimpijada.startGroupStage();
   // rezultat grupne faze
   olimpijada.showGroupResults();
   // finalna faza
-  olimpijada.runTournament();
+  await olimpijada.runTournament();
 };
 
 main();
