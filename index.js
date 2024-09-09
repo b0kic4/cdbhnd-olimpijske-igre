@@ -1,7 +1,9 @@
 const fs = require("fs");
 
+console.time("Loading files");
 const groups = JSON.parse(fs.readFileSync("./assets/groups.json"));
 const exibitions = JSON.parse(fs.readFileSync("./assets/exibitions.json"));
+console.timeEnd("Loading files");
 
 function playMatch(team1, team2) {
   const rankDiff = (team2.fibaRank - team1.fibaRank) / 100;
@@ -102,6 +104,8 @@ class Group {
   }
 
   playGroupPhase() {
+    console.time(`Group phase for ${this.name}`); // Start timing group phase
+
     const groupRounds = [];
 
     const numTeams = this.teams.length;
@@ -138,6 +142,7 @@ class Group {
       groupRounds.push(roundMatches);
     }
 
+    console.timeEnd(`Group phase for ${this.name}`); // Start timing group phase
     return groupRounds;
   }
 
@@ -261,6 +266,7 @@ class Olimpijada {
 
   startGroupStage() {
     // cuva meceve po kolima
+    console.time("group stage total");
     const rounds = {};
 
     this.groups.forEach((group) => {
@@ -277,6 +283,7 @@ class Olimpijada {
       });
     });
 
+    console.timeEnd("group stage total");
     this.printRounds(rounds);
   }
 
@@ -343,6 +350,7 @@ class Olimpijada {
   }
 
   runTournament() {
+    console.time("Elimination phase");
     const finalStandings = this.sortStandings();
 
     // slice => [0, 1) - 0 included, 1 excluded
@@ -402,6 +410,9 @@ class Olimpijada {
     console.log(`    1. ${gold.name} -> Zlato`);
     console.log(`    2. ${silver.name} -> Srebro`);
     console.log(`    3. ${bronzeWinner.name} -> Bronza`);
+
+    console.log("\n");
+    console.timeEnd("Elimination phase");
   }
 
   createQuarterfinals(potD, potE, potF, potG) {
