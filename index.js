@@ -113,6 +113,8 @@ class Group {
   }
 
   async playGroupPhase() {
+    console.time(`Group phase for ${this.name}`);
+
     const groupRounds = [];
 
     const numTeams = this.teams.length;
@@ -155,6 +157,7 @@ class Group {
       groupRounds.push(roundMatches);
     }
 
+    console.timeEnd(`Group phase for ${this.name}`);
     return groupRounds;
   }
 
@@ -277,9 +280,9 @@ class Olimpijada {
   }
 
   async startGroupStage() {
+    console.time("Group stage total");
     const rounds = {};
 
-    // group phase concurrent
     await Promise.all(
       this.groups.map(async (group) => {
         const groupRounds = await group.playGroupPhase();
@@ -296,6 +299,7 @@ class Olimpijada {
       }),
     );
 
+    console.timeEnd("Group stage total");
     this.printRounds(rounds);
   }
 
@@ -362,6 +366,7 @@ class Olimpijada {
   }
 
   async runTournament() {
+    console.time("Elimination phase");
     const finalStandings = this.sortStandings();
 
     // slice => [0, 1) - 0 included, 1 excluded
@@ -429,6 +434,9 @@ class Olimpijada {
     console.log(`    1. ${gold.name} -> Zlato`);
     console.log(`    2. ${silver.name} -> Srebro`);
     console.log(`    3. ${bronzeWinner.name} -> Bronza`);
+
+    console.log("\n");
+    console.timeEnd("Elimination phase");
   }
 
   createQuarterfinals(potD, potE, potF, potG) {
